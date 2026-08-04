@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive, noimageindex">
+<title>VIP / VTC - NextGen Note Mockups</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #30363d;
+    --ink: #e6edf3; --dim: #8b949e; --accent: #2f81f7; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  #shell { min-height: 100%; display: grid; place-items: center; padding: 24px; }
+  .card {
+    width: 100%; max-width: 430px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 12px; padding: 28px;
+  }
+  h1 { margin: 0 0 4px; font-size: 17px; letter-spacing: -0.01em; }
+  .sub { margin: 0 0 22px; color: var(--dim); font-size: 13px; }
+  label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 6px; }
+  input {
+    width: 100%; padding: 11px 12px; font-size: 16px;
+    background: #0d1117; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 7px;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button.primary {
+    width: 100%; margin-top: 14px; padding: 11px; font-size: 15px; font-weight: 600;
+    background: var(--accent); color: #fff; border: 0; border-radius: 7px; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .55; cursor: default; }
+  .err { margin-top: 12px; color: var(--bad); font-size: 13px; min-height: 18px; }
+  ul.notes { margin: 0; padding: 0; list-style: none; }
+  ul.notes li { border-top: 1px solid var(--line); }
+  ul.notes button {
+    display: block; width: 100%; text-align: left; padding: 14px 2px;
+    background: none; border: 0; color: var(--ink); font: inherit; cursor: pointer;
+  }
+  ul.notes button:hover { color: var(--accent); }
+  .foot { margin-top: 20px; color: var(--dim); font-size: 11px; line-height: 1.6; }
+  .hidden { display: none !important; }
+
+  /* Viewer: a full-window iframe with a slim bar, so no pop-up can be blocked. */
+  #viewer { position: fixed; inset: 0; background: #fff; display: flex; flex-direction: column; z-index: 10; }
+  #bar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px; background: var(--panel); color: var(--ink);
+    border-bottom: 1px solid var(--line); font-size: 13px;
+  }
+  #bar .title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #bar button {
+    flex: 0 0 auto; padding: 6px 11px; font-size: 13px; cursor: pointer;
+    background: #21262d; color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
+  }
+  #bar button:hover { border-color: var(--accent); }
+  #frame { flex: 1 1 auto; width: 100%; border: 0; background: #fff; }
+  @media print { #bar { display: none; } #viewer { position: static; } }
+</style>
+</head>
+<body>
+
+<div id="shell">
+  <div class="card" id="gate">
+    <h1>VIP / VTC - NextGen Note Mockups</h1>
+    <p class="sub">Sample data only. Not a real chart.</p>
+    <form id="form" autocomplete="off">
+      <label for="pw">Password</label>
+      <input id="pw" type="password" autocomplete="current-password" autofocus>
+      <button class="primary" id="go" type="submit">Open</button>
+    </form>
+    <div class="err" id="err" role="alert"></div>
+    <p class="foot">
+      The mockups are stored encrypted in this repository and decrypted in your browser.
+      The password is the decryption key, so there is no plaintext copy to route around the
+      gate with, and it is never sent anywhere.
+    </p>
+  </div>
+
+  <div class="card hidden" id="menu">
+    <h1>NextGen Note Mockups</h1>
+    <p class="sub">Sample data only. Not a real chart.</p>
+    <ul class="notes" id="list"></ul>
+    <p class="foot" id="menufoot"></p>
+  </div>
+</div>
+
+<div id="viewer" class="hidden">
+  <div id="bar">
+    <button id="back" type="button">&larr; All notes</button>
+    <span class="title" id="vtitle"></span>
+    <button id="newtab" type="button">Open in new tab</button>
+    <button id="print" type="button">Print</button>
+  </div>
+  <iframe id="frame" title="Note mockup"></iframe>
+</div>
+
+<script>
+const encoder = new TextEncoder(), decoder = new TextDecoder();
+const $ = id => document.getElementById(id);
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+let PASSWORD = null, NOTES = null, CURRENT = null;
+const cache = new Map();   // slug -> decrypted html, so "new tab" needs no await
+
+async function decryptFile(name, password) {
+  const res = await fetch('notes/' + name, { cache: 'no-store' });
+  if (!res.ok) throw new Error('could not load ' + name + ' (HTTP ' + res.status + ')');
+  const p = await res.json();
+  const base = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: b64(p.salt), iterations: p.iter, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['decrypt'],
+  );
+  // A wrong password fails GCM authentication and throws here. That IS the check.
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(p.iv) }, key, b64(p.ct));
+  return decoder.decode(pt);
+}
+
+async function noteHtml(slug) {
+  if (!cache.has(slug)) cache.set(slug, await decryptFile(slug + '.enc', PASSWORD));
+  return cache.get(slug);
+}
+
+async function show(slug) {
+  const note = NOTES.find(n => n.slug === slug);
+  if (!note) return;
+  const html = await noteHtml(slug);
+  CURRENT = slug;
+  $('vtitle').textContent = note.title;
+  // srcdoc set as a property, not an attribute, so the note's own nested srcdoc needs no
+  // second round of escaping.
+  $('frame').srcdoc = html;
+  $('viewer').classList.remove('hidden');
+  if (location.hash !== '#note=' + slug) history.replaceState(null, '', '#note=' + slug);
+}
+
+function closeViewer() {
+  $('viewer').classList.add('hidden');
+  $('frame').srcdoc = '';
+  CURRENT = null;
+  history.replaceState(null, '', location.pathname);
+}
+
+function showMenu() {
+  $('gate').classList.add('hidden');
+  $('menu').classList.remove('hidden');
+  const ul = $('list');
+  ul.textContent = '';
+  for (const n of NOTES) {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = n.title;
+    b.onclick = () => show(n.slug).catch(e => alert(e.message));
+    li.appendChild(b); ul.appendChild(li);
+  }
+  $('menufoot').textContent = NOTES.length + ' mockups, decrypted locally in this browser.';
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const pw = $('pw').value;
+  $('err').textContent = ''; $('go').disabled = true; $('go').textContent = 'Checking...';
+  try {
+    // Decrypting the manifest is the password check: get this far and the key is right.
+    const manifest = JSON.parse(await decryptFile('index.enc', pw));
+    PASSWORD = pw; NOTES = manifest.notes;
+    showMenu();
+    const want = new URLSearchParams(location.hash.slice(1)).get('note');
+    if (want) await show(want);
+  } catch (err) {
+    const wrongKey = err instanceof DOMException || /decrypt|operation-specific/i.test(String(err.message));
+    $('err').textContent = wrongKey ? 'Wrong password.' : err.message;
+  } finally {
+    $('go').disabled = false; $('go').textContent = 'Open';
+  }
+});
+
+$('back').onclick = closeViewer;
+$('print').onclick = () => { const w = $('frame').contentWindow; w.focus(); w.print(); };
+$('newtab').onclick = () => {
+  if (!CURRENT) return;
+  // Synchronous inside the click, so no pop-up blocker fires: the html is already decrypted.
+  const url = URL.createObjectURL(new Blob([cache.get(CURRENT)], { type: 'text/html' }));
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+};
+
+// A deep link still has to clear the gate; it just opens straight through afterwards.
+addEventListener('hashchange', () => {
+  const want = new URLSearchParams(location.hash.slice(1)).get('note');
+  if (PASSWORD && want && want !== CURRENT) show(want).catch(e => alert(e.message));
+});
+</script>
+</body>
+</html>

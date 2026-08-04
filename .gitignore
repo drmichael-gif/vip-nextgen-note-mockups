@@ -1,0 +1,5 @@
+# .snapshot/ holds the PLAINTEXT mockups that get encrypted into notes/.
+# It must never be committed — the whole point of this repo is that it holds ciphertext only.
+.snapshot/
+.DS_Store
+node_modules/
